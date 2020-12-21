@@ -112,9 +112,14 @@ class RealCall(
   // These properties are accessed by canceling threads. Any thread can cancel a call, and once it's
   // canceled it's canceled forever.
 
-  @Volatile private var canceled = false
-  @Volatile private var exchange: Exchange? = null
-  @Volatile var connectionToCancel: RealConnection? = null
+  @Volatile
+  private var canceled = false
+
+  @Volatile
+  private var exchange: Exchange? = null
+
+  @Volatile
+  var connectionToCancel: RealConnection? = null
 
   override fun timeout() = timeout
 
@@ -161,6 +166,13 @@ class RealCall(
     check(executed.compareAndSet(false, true)) { "Already Executed" }
 
     callStart()
+
+    /**
+     * 调用了OkHttpClient的调度器 dispatcher 的 enqueue方法
+     * AsyncCall
+     * responseCallback ---> 对应我们写的callback
+     *
+     */
     client.dispatcher.enqueue(AsyncCall(responseCallback))
   }
 
@@ -174,30 +186,40 @@ class RealCall(
   @Throws(IOException::class)
   internal fun getResponseWithInterceptorChain(): Response {
     // Build a full stack of interceptors.
+    //拦截器列表
     val interceptors = mutableListOf<Interceptor>()
+
+    //客户端自己设置的拦截器
     interceptors += client.interceptors
+    // 重试并跟踪拦截器
     interceptors += RetryAndFollowUpInterceptor(client)
+    // 桥梁拦截器
     interceptors += BridgeInterceptor(client.cookieJar)
+    //缓存拦截器
     interceptors += CacheInterceptor(client.cache)
+    //链接拦截器
     interceptors += ConnectInterceptor
     if (!forWebSocket) {
       interceptors += client.networkInterceptors
     }
+    // 调用服务的拦截器
     interceptors += CallServerInterceptor(forWebSocket)
 
+    // 拦截器链 责任链模式
     val chain = RealInterceptorChain(
-        call = this,
-        interceptors = interceptors,
-        index = 0,
-        exchange = null,
-        request = originalRequest,
-        connectTimeoutMillis = client.connectTimeoutMillis,
-        readTimeoutMillis = client.readTimeoutMillis,
-        writeTimeoutMillis = client.writeTimeoutMillis
+      call = this,
+      interceptors = interceptors,
+      index = 0,
+      exchange = null,
+      request = originalRequest,
+      connectTimeoutMillis = client.connectTimeoutMillis,
+      readTimeoutMillis = client.readTimeoutMillis,
+      writeTimeoutMillis = client.writeTimeoutMillis
     )
 
     var calledNoMoreExchanges = false
     try {
+      // 链的执行
       val response = chain.proceed(originalRequest)
       if (isCanceled()) {
         response.closeQuietly()
@@ -228,17 +250,17 @@ class RealCall(
     synchronized(this) {
       check(!responseBodyOpen) {
         "cannot make a new request because the previous response is still open: " +
-            "please call response.close()"
+          "please call response.close()"
       }
       check(!requestBodyOpen)
     }
 
     if (newExchangeFinder) {
       this.exchangeFinder = ExchangeFinder(
-          connectionPool,
-          createAddress(request.url),
-          this,
-          eventListener
+        connectionPool,
+        createAddress(request.url),
+        this,
+        eventListener
       )
     }
   }
@@ -438,18 +460,18 @@ class RealCall(
     }
 
     return Address(
-        uriHost = url.host,
-        uriPort = url.port,
-        dns = client.dns,
-        socketFactory = client.socketFactory,
-        sslSocketFactory = sslSocketFactory,
-        hostnameVerifier = hostnameVerifier,
-        certificatePinner = certificatePinner,
-        proxyAuthenticator = client.proxyAuthenticator,
-        proxy = client.proxy,
-        protocols = client.protocols,
-        connectionSpecs = client.connectionSpecs,
-        proxySelector = client.proxySelector
+      uriHost = url.host,
+      uriPort = url.port,
+      dns = client.dns,
+      socketFactory = client.socketFactory,
+      sslSocketFactory = sslSocketFactory,
+      hostnameVerifier = hostnameVerifier,
+      certificatePinner = certificatePinner,
+      proxyAuthenticator = client.proxyAuthenticator,
+      proxy = client.proxy,
+      protocols = client.protocols,
+      connectionSpecs = client.connectionSpecs,
+      proxySelector = client.proxySelector
     )
   }
 
@@ -461,8 +483,8 @@ class RealCall(
    */
   private fun toLoggableString(): String {
     return ((if (isCanceled()) "canceled " else "") +
-        (if (forWebSocket) "web socket" else "call") +
-        " to " + redactedUrl())
+      (if (forWebSocket) "web socket" else "call") +
+      " to " + redactedUrl())
   }
 
   internal fun redactedUrl(): String = originalRequest.url.redact()
@@ -470,7 +492,8 @@ class RealCall(
   inner class AsyncCall(
     private val responseCallback: Callback
   ) : Runnable {
-    @Volatile var callsPerHost = AtomicInteger(0)
+    @Volatile
+    var callsPerHost = AtomicInteger(0)
       private set
 
     fun reuseCallsPerHostFrom(other: AsyncCall) {
@@ -481,10 +504,10 @@ class RealCall(
       get() = originalRequest.url.host
 
     val request: Request
-        get() = originalRequest
+      get() = originalRequest
 
     val call: RealCall
-        get() = this@RealCall
+      get() = this@RealCall
 
     /**
      * Attempt to enqueue this async call on [executorService]. This will attempt to clean up
@@ -495,12 +518,14 @@ class RealCall(
 
       var success = false
       try {
+        //后台执行任务 AsyncCall是一个Runnable 看下run方法中具体做了什么
         executorService.execute(this)
         success = true
       } catch (e: RejectedExecutionException) {
         val ioException = InterruptedIOException("executor rejected")
         ioException.initCause(e)
         noMoreExchanges(ioException)
+        //当线程池满了 拒绝执行  回调了onFailure()方法
         responseCallback.onFailure(this@RealCall, ioException)
       } finally {
         if (!success) {
@@ -514,14 +539,17 @@ class RealCall(
         var signalledCallback = false
         timeout.enter()
         try {
+          //获取到了一个response对象
           val response = getResponseWithInterceptorChain()
           signalledCallback = true
+          //请求成，将response对象回调回去
           responseCallback.onResponse(this@RealCall, response)
         } catch (e: IOException) {
           if (signalledCallback) {
             // Do not signal the callback twice!
             Platform.get().log("Callback failure for ${toLoggableString()}", Platform.INFO, e)
           } else {
+            //发生异常，回调失败方法
             responseCallback.onFailure(this@RealCall, e)
           }
         } catch (t: Throwable) {
@@ -529,6 +557,7 @@ class RealCall(
           if (!signalledCallback) {
             val canceledException = IOException("canceled due to $t")
             canceledException.addSuppressed(t)
+            //发生异常，回调失败方法
             responseCallback.onFailure(this@RealCall, canceledException)
           }
           throw t

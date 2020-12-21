@@ -113,6 +113,7 @@ class Dispatcher constructor() {
 
   internal fun enqueue(call: AsyncCall) {
     synchronized(this) {
+      //将call对象添加到 list中
       readyAsyncCalls.add(call)
 
       // Mutate the AsyncCall so that it shares the AtomicInteger of an existing running call to
@@ -122,6 +123,7 @@ class Dispatcher constructor() {
         if (existingCall != null) call.reuseCallsPerHostFrom(existingCall)
       }
     }
+    // 这个方法很重要
     promoteAndExecute()
   }
 
@@ -161,9 +163,11 @@ class Dispatcher constructor() {
   private fun promoteAndExecute(): Boolean {
     this.assertThreadDoesntHoldLock()
 
+    //声明一个集合
     val executableCalls = mutableListOf<AsyncCall>()
     val isRunning: Boolean
     synchronized(this) {
+      //  遍历 readyAsyncCalls的集合
       val i = readyAsyncCalls.iterator()
       while (i.hasNext()) {
         val asyncCall = i.next()
@@ -179,8 +183,25 @@ class Dispatcher constructor() {
       isRunning = runningCallsCount() > 0
     }
 
+    //遍历 executableCalls集合
     for (i in 0 until executableCalls.size) {
+      // 拿到 asyncCall对象
       val asyncCall = executableCalls[i]
+      // 调用了 executeOn()传入 executorService
+      // executorService是一个线程池，用来执行后台任务
+
+      /**
+       * @get:Synchronized
+         @get:JvmName("executorService") val executorService: ExecutorService
+           get() {
+            if (executorServiceOrNull == null) {
+              //自定义了一个没有核心线程 非核心线程无限的 并且线程在空置60秒后会被回收的线程池
+            executorServiceOrNull = ThreadPoolExecutor(0, Int.MAX_VALUE, 60, TimeUnit.SECONDS,
+            SynchronousQueue(), threadFactory("$okHttpName Dispatcher", false))
+            }
+              return executorServiceOrNull!!
+            }
+       */
       asyncCall.executeOn(executorService)
     }
 

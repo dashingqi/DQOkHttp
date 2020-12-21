@@ -274,7 +274,11 @@ open class OkHttpClient internal constructor(
     }
   }
 
-  /** Prepares the [request] to be executed at some point in the future. */
+  /** Prepares the [request] to be executed at some point in the future.
+   *  okhttpclient.newCall(request).enqueue()
+   *
+   *
+   * */
   override fun newCall(request: Request): Call = RealCall(this, request, forWebSocket = false)
 
   /** Uses [request] to connect a new web socket. */
@@ -480,7 +484,9 @@ open class OkHttpClient internal constructor(
     //调度器
     internal var dispatcher: Dispatcher = Dispatcher()
     internal var connectionPool: ConnectionPool = ConnectionPool()
+    //拦截器list
     internal val interceptors: MutableList<Interceptor> = mutableListOf()
+    //网络拦截器list
     internal val networkInterceptors: MutableList<Interceptor> = mutableListOf()
     internal var eventListenerFactory: EventListener.Factory = EventListener.NONE.asFactory()
     internal var retryOnConnectionFailure = true
